@@ -71,12 +71,16 @@ def optimize_by_cplex(instance, timeLimit=None, export_model=False, log_output=F
 
     # solve our MIQP by gurobi
     obj_val = None
+    gap_val = None
+    sol_time = None
 
     s= model.solve()
     if s:
         obj_val = model.solution.objective_value
+        gap_val = model.solve_details.gap
+        sol_time = model.solve_details.time
     else:
         print('Optimization was stopped')
         sys.exit(0)
 
-    return obj_val
+    return obj_val, gap_val, sol_time

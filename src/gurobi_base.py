@@ -4,7 +4,7 @@ import numpy as np
 import sys
 
 
-def optimize_by_gurobi(instance, timeLimit=None, export_model=False):
+def optimize_by_gurobi(instance, timeLimit=None, export_model=False, log_output=False):
 
     # get instance parameters
     incidence_mat, commodity_dict, alpha, beta, theta = instance.get()
@@ -17,6 +17,9 @@ def optimize_by_gurobi(instance, timeLimit=None, export_model=False):
     
     # model
     model = gp.Model("restricted network toll pricing problem")
+    if log_output==False:
+        model.setParam('OutputFlag', 0)
+
     if timeLimit is not None:
         model.setParam('TimeLimit', timeLimit)  # set time limit if specified.
 
@@ -73,13 +76,17 @@ def optimize_by_gurobi(instance, timeLimit=None, export_model=False):
 
     # solve our MIQP by gurobi
     obj_val = None
+    gap_val = None
+    sol_time = None
 
     model.optimize()  
     status = model.Status 
     if status == GRB.OPTIMAL:
         obj_val = model.ObjVal
+        gap_val = model.MIPGap
+        sol_time = model.Runtime
     else:
         print('Optimization was stopped with status %d' % status)
         sys.exit(0)
 
-    return obj_val
+    return obj_val, gap_val, sol_time

@@ -4,7 +4,7 @@ import numpy as np
 import sys
 
 
-def optimize_by_gurobi(instance, timeLimit=None, export_model=False, log_output=False):
+def optimize_with_solution_metrics(instance, timeLimit=None, export_model=False, log_output=False, sensitivity=1e-6):
 
     # get instance parameters
     incidence_mat, commodity_dict, alpha, beta, theta = instance.get()
@@ -44,6 +44,9 @@ def optimize_by_gurobi(instance, timeLimit=None, export_model=False, log_output=
     Constraints
     '''
 
+    num_eq_constraints = 0
+    num_ineq_constraints = 0
+
     # f-x relationship
     model.addConstrs((x.sum(a, '*') == f[a] for a in arcs), "f_x_")
     
@@ -51,6 +54,7 @@ def optimize_by_gurobi(instance, timeLimit=None, export_model=False, log_output=
     for j in commodity_dict:
         origin, destination, demand = commodity_dict[j]
         for i in nodes:
+            num_eq_constraints += 1
             if i == origin:
                 model.addConstr(sum(incidence_mat[i, a] * x[a, j] for a in arcs)==-demand)
             elif i == destination:
@@ -61,12 +65,14 @@ def optimize_by_gurobi(instance, timeLimit=None, export_model=False, log_output=
     # either-or constraints for CS conditions
     for a in arcs:
         lambda_rhs = theta[a] + beta[a] + alpha[a] * tot_demand
+        num_ineq_constraints += 2
         model.addConstr(x[a, 0] <= max_demand * xi[a])
         model.addConstr(lambda_[a] <= lambda_rhs * (1 - xi[a]))
 
     # equilibrium conditions
     for a in arcs:
         mat_mul = gp.quicksum(mu_[i] * incidence_mat[i,a] for i in nodes)
+        num_ineq_constraints += 2
         model.addConstr(lambda_[a] - alpha[a] * f[a] - mat_mul >= beta[a])
         model.addConstr(lambda_[a] - alpha[a] * f[a] - mat_mul <= beta[a] + theta[a])
 
@@ -78,15 +84,37 @@ def optimize_by_gurobi(instance, timeLimit=None, export_model=False, log_output=
     obj_val = None
     gap_val = None
     sol_time = None
+    arc_utilization_rate = None
+    num_binding_ineq_constraints = 0
 
     model.optimize()  
     status = model.Status 
+
     if status == GRB.OPTIMAL:
+        arc_utilization_rate = round(((len(arcs) - [f[a].X for a in arcs].count(0)) / len(arcs)) * 100, 2)
         obj_val = model.ObjVal
         gap_val = model.MIPGap
         sol_time = model.Runtime
+
+        # collect the statistics related to the binding constraints
+        for a in arcs:
+            
+            # for CS conditions
+            lambda_rhs = theta[a] + beta[a] + alpha[a] * tot_demand
+            if max_demand * xi[a].X - sensitivity <= x[a,0].X <= max_demand * xi[a].X + sensitivity:
+                num_binding_ineq_constraints += 1
+            if lambda_rhs * (1 - xi[a].X) - sensitivity <= lambda_[a].X <= lambda_rhs * (1 - xi[a].X) + sensitivity:
+                num_binding_ineq_constraints += 1
+
+            # for equilibrium conditions
+            mat_mul = gp.quicksum(mu_[i].X * incidence_mat[i,a] for i in nodes)
+            if beta[a] - sensitivity <= lambda_[a].X - alpha[a] * f[a].X - mat_mul <= beta[a] + sensitivity:
+                num_binding_ineq_constraints += 1
+            if  beta[a] + theta[a] - sensitivity <= lambda_[a].X - alpha[a] * f[a].X - mat_mul <= beta[a] + theta[a] + sensitivity:
+                num_binding_ineq_constraints += 1
+
     else:
         print('Optimization was stopped with status %d' % status)
         sys.exit(0)
 
-    return obj_val, gap_val, sol_time
+    return obj_val, gap_val, sol_time, arc_utilization_rate

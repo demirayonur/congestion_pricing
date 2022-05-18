@@ -7,8 +7,8 @@ import random
 class Instance(object):
 
     def __init__(self,n, m, k, my_seed, 
-                 min_demand=100, 
-                 max_demand=500,
+                 min_demand=10, 
+                 max_demand=50,
                  min_alpha=1,
                  max_alpha=2,
                  min_beta = 1.5,
